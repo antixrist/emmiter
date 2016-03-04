@@ -1,6 +1,6 @@
 {
   "name": "emmiter",
-  "version": "2.0.0",
+  "version": "0.0.1",
   "description": "dead simple event emitter",
   "main": "lib/emmiter.js",
   "scripts": {

@@ -167,7 +167,10 @@ var slice         = require('sliced'),
     extend        = require('extend'),
     isPlainObject = require('isobject'),
     isArray       = require('isarray'),
-    isFunction    = require('isfunction');
+    isFunction    = require('isfunction'),
+    isUndefined   = function (input) {
+      return typeof input == 'undefined';
+    };
 
 if (!Array.prototype.some) {
   Array.prototype.some = function(fun/*, thisArg*/) {
@@ -202,6 +205,13 @@ if (!Array.prototype.some) {
  */
 
 /**
+ * @typedef {{}} Listener
+ * @property {string} name
+ * @property {string} ns
+ * @property {function|null} fn
+ */
+
+/**
  * @param {Event|string|*} event
  * @param {*} [callback]
  */
@@ -215,7 +225,7 @@ var checkArgs = function (event, callback) {
   }
 };
 
-var EVENT_ALL = 'all';
+var EVENT_ALL = '*';
 
 /**
  * @constructor
@@ -237,6 +247,15 @@ Emmiter.prototype.NS_SEPARATOR = (function (separator) {
     return separator;
   }
 })('.');
+
+/**
+ * @param {Listener} listener
+ * @returns {boolean}
+ * @private
+ */
+Emmiter.prototype._isListener = function _isListener (listener) {
+  return !isUndefined(listener['event']) && !isUndefined(listener['ns']) && !isUndefined(listener['fn']);
+};
 
 /**
  * @param {string|Event} event
@@ -280,22 +299,33 @@ Emmiter.prototype._buildEventName = function (event) {
  * @returns {Array}
  */
 Emmiter.prototype.getListeners = function getListeners (events, callback, exclude) {
-  this.listeners = this.listeners || [];
-
   var args = slice(arguments);
 
-  if (args.length == 2) {
-    //if (args[1])
-  }
+  this.listeners = this.listeners || [];
 
-  exclude        = !!exclude || false;
-  callback       = (isFunction(callback)) ? callback : null;
+  if (args.length < 2) {
+    callback = null;
+    exclude  = false;
+  } else
+  if (args.length == 2) {
+    if (isFunction(args[1])) {
+      callback = args[1];
+      exclude  = false;
+    } else {
+      callback = null;
+      exclude  = !!exclude;
+    }
+  } else
+  if (args.length == 3) {
+    callback = (isFunction(callback)) ? callback : null;
+    exclude  = !!exclude;
+  }
 
   var listenersCriteria = [],
       _listeners        = [],
       listeners         = this.listeners;
 
-  if (events || callback) {
+  if (!!events || callback) {
     listenersCriteria = this._parseListeners(events, callback);
     _listeners = listeners.filter(function (listener) {
       var found = listenersCriteria.some(function (listenerCriteria) {
@@ -330,14 +360,14 @@ Emmiter.prototype._parseListeners = function _parseListeners (events, callback) 
   var listeners = [],
       self      = this;
 
-  //console.log('isPlainObject(events)', isPlainObject(events), events);
-  //console.log('isArray(events)', isArray(events), events);
-  //console.log('typeof events == \'string\'', typeof events == 'string', events);
-
   if (isPlainObject(events)) {
-    for (var event in events) if (events.hasOwnProperty(event)) {
-      callback = events[event];
-      listeners = listeners.concat(this._parseListeners(event, callback));
+    if (this._isListener(events)) {
+      listeners.push(events);
+    } else {
+      for (var event in events) if (events.hasOwnProperty(event)) {
+        callback = events[event];
+        listeners = listeners.concat(this._parseListeners(event, callback));
+      }
     }
   } else
   if (isArray(events)) {
@@ -352,9 +382,6 @@ Emmiter.prototype._parseListeners = function _parseListeners (events, callback) 
     } else {
       event = this._parseEventName(events[0]);
       //checkArgs(event.name, callback);
-
-      //console.log('ready parsed event', event);
-
       listeners.push({
         event: event.name,
         ns:    event.ns,
@@ -381,39 +408,7 @@ Emmiter.prototype._parseListeners = function _parseListeners (events, callback) 
 Emmiter.prototype.on = function on (events, callback) {
   callback = (isFunction(callback)) ? callback : null;
 
-  var self       = this,
-      listeners  = this._parseListeners(events, callback);
-
-  this.listeners = this.getListeners().concat(listeners);
-
-  return this;
-
-  if (isPlainObject(events)) {
-    for (var event in events) if (events.hasOwnProperty(event)) {
-      callback = events[event];
-      this.on(event, callback);
-    }
-  } else
-  if (isArray(events)) {
-    events.forEach(function (event) {
-      self.on(event, callback);
-    });
-  } else
-  if (typeof events == 'string') {
-    events = events.split(' ');
-    if (events.length > 1) {
-      this.on(events, callback);
-    } else {
-      event = self._parseEventName(events[0]);
-      checkArgs(event.name, callback);
-
-      self.getListeners().push({
-        event: event.name,
-        ns:    event.ns,
-        fn:    callback
-      });
-    }
-  }
+  this.listeners = this.getListeners().concat(this._parseListeners(events, callback));
 
   return this;
 };
@@ -465,38 +460,7 @@ Emmiter.prototype.once = function once () {
 Emmiter.prototype.off = function off (events, callback) {
   callback = (isFunction(callback)) ? callback : null;
 
-  var self       = this,
-      listeners  = this._parseListeners(events, callback);
-
-  this.listeners = this.getListeners(listeners).concat(listeners);
-
-  return this;
-
-
-
-  var self = this;
-
-  if (isPlainObject(events)) {
-    for (var event in events) if (events.hasOwnProperty(event)) {
-      callback = events[event];
-      this.off(event, callback);
-    }
-  } else {
-    if (typeof events == 'string') {
-      (events = events.split(' ')).forEach(function (event) {
-        event = self._parseEventName(event);
-        //checkArgs(event.name, callback);
-
-        self.listeners = self.getListeners().filter(function (listener) {
-          return !(
-            (!event.name                   || event.name == listener.event) &&
-            (!event.ns                     || event.ns   == listener.ns) &&
-            (typeof callback != 'function' || callback   == listener.fn)
-          );
-        });
-      });
-    }
-  }
+  this.listeners = this.getListeners(events, callback, true);
 
   return this;
 };
@@ -521,20 +485,16 @@ Emmiter.prototype.removeListener = function removeListener () {
  * @returns {Emmiter|[]|*}
  */
 Emmiter.prototype.emit = function emit (events, args) {
-  //return this;
-
-  //checkArgs(events);
-  //events = ;
-  args  = slice(arguments, 1);
-
   var self      = this,
       results   = [];
 
-  this.getListeners(events).forEach(function (listener) {
-    // todo: remove this
-    var eventName = self._buildEventName({name: listener.event, ns: listener.ns});
+  args  = slice(arguments, 1);
 
-    results.push(listener.fn.apply(self, args.concat([eventName])));
+  this.getListeners(events).forEach(function (listener) {
+    //var eventName = self._buildEventName({name: listener.event, ns: listener.ns});
+    //results.push(listener.fn.apply(self, args.concat([eventName])));
+
+    results.push(listener.fn.apply(self, args));
   });
 
   if (!!this._returnListenersResults) {
