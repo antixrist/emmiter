@@ -1,12 +1,12 @@
-### maxListeners
+maxListeners
 
 - total?
 - by event name?
 - by namespace?
 
-### Proxy
+Proxy
 
 - `listenTo`/`listenToOnce`/`stopListening`
 
 
-### An event that triggered always ('*' or 'all')
+An event that triggered always (`*` or `all`)
