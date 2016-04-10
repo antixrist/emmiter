@@ -57,7 +57,6 @@
     "isarray": "^1.0.0",
     "isfunction": "0.0.6",
     "isobject": "^2.0.0",
-    "lodash.isboolean": "^3.0.3",
     "sliced": "^1.0.1"
   }
 }
