@@ -57,6 +57,7 @@
     "isarray": "^1.0.0",
     "isfunction": "0.0.6",
     "isobject": "^2.0.0",
+    "setasap": "^2.0.0",
     "sliced": "^1.0.1"
   }
 }

@@ -126,6 +126,95 @@ module.exports = Array.isArray || function (arr) {
 };
 
 },{}],6:[function(require,module,exports){
+(function (thisVar, undefined) {
+	'use strict';
+	var main = (typeof window === 'object' && window) || (typeof global === 'object' && global) ||
+		typeof self === 'object' && self || thisVar;
+
+	var hasSetImmediate = typeof setImmediate === 'function';
+	var hasNextTick = typeof process === 'object' && !!process && typeof process.nextTick === 'function';
+	var index = 0;
+
+	function getNewIndex() {
+		if (index === 9007199254740991) {
+			return 0;
+		}
+		return ++index;
+	}
+
+	var setAsap = (function () {
+		var hiddenDiv, scriptEl, timeoutFn, callbacks;
+
+		// Modern browsers, fastest async
+		if (main.MutationObserver) {
+			return function setAsap(callback) {
+				hiddenDiv = document.createElement("div");
+				(new MutationObserver(function() {
+					callback();
+					hiddenDiv = null;
+				})).observe(hiddenDiv, { attributes: true });
+				hiddenDiv.setAttribute('i', '1');
+			};
+
+		// Browsers that support postMessage
+		} else if (!hasSetImmediate && main.postMessage && !main.importScripts && main.addEventListener) {
+
+			var MESSAGE_PREFIX = "com.setImmediate" + Math.random();
+			callbacks = {};
+
+			var onGlobalMessage = function (event) {
+				if (event.source === main && event.data.indexOf(MESSAGE_PREFIX) === 0) {
+					var i = event.data.split(':')[1];
+					callbacks[i]();
+					delete callbacks[i];
+				}
+			};
+
+			main.addEventListener("message", onGlobalMessage, false);
+
+			return function setAsap(callback) {
+				var i = getNewIndex();
+				callbacks[i] = callback;
+				main.postMessage(MESSAGE_PREFIX + ':' + i, "*");
+			};
+
+			// IE browsers without postMessage
+		} else if (!hasSetImmediate && main.document && 'onreadystatechange' in document.createElement('script')) {
+
+			return function setAsap(callback) {
+				scriptEl = document.createElement("script");
+				scriptEl.onreadystatechange = function onreadystatechange() {
+					scriptEl.onreadystatechange = null;
+					scriptEl.parentNode.removeChild(scriptEl);
+					scriptEl = null;
+					callback();
+				};
+				document.body.appendChild(scriptEl);
+			};
+
+		// All other browsers and node
+		} else {
+
+			timeoutFn = (hasSetImmediate && setImmediate) || (hasNextTick && process.nextTick) || setTimeout;
+			return function setAsap(callback) {
+				timeoutFn(callback);
+			};
+		}
+
+	})();
+
+	if (typeof module !== 'undefined' && module.exports) {
+		module.exports = setAsap;
+	} else if (typeof require !== 'undefined' && require.amd) {
+		define(function () {
+			return setAsap;
+		});
+	} else {
+		main.setAsap = setAsap;
+	}
+})(this);
+
+},{}],7:[function(require,module,exports){
 
 /**
  * An Array.prototype.slice.call(arguments) alternative
@@ -168,6 +257,7 @@ var slice         = require('sliced'),
     isPlainObject = require('isobject'),
     isArray       = require('isarray'),
     isFunction    = require('isfunction'),
+    nextTick      = require('setasap'),
     isUndefined   = function (input) {
       return typeof input == 'undefined';
     };
@@ -228,11 +318,16 @@ var checkArgs = function (event, callback) {
 var EVENT_ALL = '*';
 
 /**
+ * @params {{}} [target]
  * @constructor
  */
-var Emmiter = function Emmiter () {
+var Emmiter = function Emmiter (target) {
   if (!(this instanceof Emmiter)) {
-    return new Emmiter;
+    if (isPlainObject(target)) {
+      return Emmiter.patch(target);
+    }
+
+    return new Emmiter();
   }
 
   return this;
@@ -253,7 +348,7 @@ Emmiter.prototype.NS_SEPARATOR = (function (separator) {
  * @returns {boolean}
  * @private
  */
-Emmiter.prototype._isListener = function _isListener (listener) {
+Emmiter.prototype._isListener = function Emmiter$_isListener (listener) {
   return !isUndefined(listener['event']) && !isUndefined(listener['ns']) && !isUndefined(listener['fn']);
 };
 
@@ -261,7 +356,7 @@ Emmiter.prototype._isListener = function _isListener (listener) {
  * @param {string|Event} event
  * @returns {Event}
  */
-Emmiter.prototype._parseEventName = function (event) {
+Emmiter.prototype._parseEventName = function Emmiter$_parseEventName (event) {
   var result = null, tmp;
 
   if (
@@ -285,7 +380,7 @@ Emmiter.prototype._parseEventName = function (event) {
  * @param {string|Event} event
  * @returns {string}
  */
-Emmiter.prototype._buildEventName = function (event) {
+Emmiter.prototype._buildEventName = function Emmiter$_buildEventName (event) {
   event = this._parseEventName(event);
 
   return (event.ns) ? [event.name, event.ns].join(this.NS_SEPARATOR()) : event.name;
@@ -298,7 +393,7 @@ Emmiter.prototype._buildEventName = function (event) {
  * @param {boolean} [exclude=false]
  * @returns {Array}
  */
-Emmiter.prototype.getListeners = function getListeners (events, callback, exclude) {
+Emmiter.prototype.getListeners = function Emmiter$getListeners (events, callback, exclude) {
   var args; for (var i = arguments.length, a = args = new Array(i); i--; a[i] = arguments[i]) {}
 
   this.listeners = this.listeners || [];
@@ -354,7 +449,7 @@ Emmiter.prototype.getListeners = function getListeners (events, callback, exclud
  * @param {Function} [callback]
  * @returns {Array}
  */
-Emmiter.prototype._parseListeners = function _parseListeners (events, callback) {
+Emmiter.prototype._parseListeners = function Emmiter$_parseListeners (events, callback) {
   callback  = (isFunction(callback)) ? callback : null;
 
   var listeners = [],
@@ -407,7 +502,7 @@ Emmiter.prototype._parseListeners = function _parseListeners (events, callback) 
  */
 Emmiter.prototype.addListener =
 Emmiter.prototype.bind =
-Emmiter.prototype.on = function on (events, callback) {
+Emmiter.prototype.on = function Emmiter$on (events, callback) {
   callback = (isFunction(callback)) ? callback : null;
 
   this.listeners = this.getListeners().concat(this._parseListeners(events, callback));
@@ -421,7 +516,7 @@ Emmiter.prototype.on = function on (events, callback) {
  * @returns {Emmiter}
  */
 Emmiter.prototype.once =
-Emmiter.prototype.one = function one (event, callback) {
+Emmiter.prototype.one = function Emmiter$one (event, callback) {
   checkArgs(event, callback);
 
   var self = this;
@@ -441,7 +536,7 @@ Emmiter.prototype.one = function one (event, callback) {
  */
 Emmiter.prototype.removeListener =
 Emmiter.prototype.unbind =
-Emmiter.prototype.off = function off (events, callback) {
+Emmiter.prototype.off = function Emmiter$off (events, callback) {
   callback = (isFunction(callback)) ? callback : null;
 
   this.listeners = this.getListeners(events, callback, true);
@@ -454,8 +549,38 @@ Emmiter.prototype.off = function off (events, callback) {
  * @param {...*} [args]
  * @returns {Emmiter|[]|*}
  */
+Emmiter.prototype.triggerAsync =
+Emmiter.prototype.emitAsync = function Emmiter$emitAsync (events) {
+  var self = this;
+  var args; for (var i = arguments.length, a = args = new Array(i); i--; a[i] = arguments[i]) {}
+
+  nextTick(function () {
+    self._emit.apply(self, args);
+  });
+
+  return this;
+};
+
+/**
+ * @param {Event|string|string[]} events
+ * @param {...*} [args]
+ * @returns {Emmiter|[]|*}
+ */
 Emmiter.prototype.trigger =
-Emmiter.prototype.emit = function emit (events, args) {
+Emmiter.prototype.emit = function Emmiter$emit (events) {
+  var args; for (var i = arguments.length, a = args = new Array(i); i--; a[i] = arguments[i]) {}
+
+  this._emit.apply(this, args);
+
+  return this;
+};
+
+/**
+ * @param {Event|string|string[]} events
+ * @param {...*} [args]
+ * @returns {Emmiter|[]|*}
+ */
+Emmiter.prototype._emit = function Emmiter$_emit (events, args) {
   var self      = this,
       results   = [];
 
@@ -480,7 +605,7 @@ Emmiter.prototype.emit = function emit (events, args) {
 /**
  * @param {boolean} bool
  */
-Emmiter.prototype.returnListenersResults = function returnListenersResults (bool) {
+Emmiter.prototype.returnListenersResults = function Emmiter$returnListenersResults (bool) {
   this._returnListenersResults = !!bool;
 };
 
@@ -490,15 +615,15 @@ Emmiter.prototype.returnListenersResults = function returnListenersResults (bool
  * @returns {*}
  */
 Emmiter.extend =
-Emmiter.patch = function (target) {
-  return extend(target, new Emmiter(), Emmiter.prototype);
+Emmiter.patch = function Emmiter$patch (target) {
+  return extend(target, Emmiter.prototype);
 };
 
 /**
  * @static
  * @returns {Emmiter}
  */
-Emmiter.create = function () {
+Emmiter.create = function Emmiter$create () {
   //return Object.create(Emmiter.prototype);
   return new Emmiter;
 };
@@ -507,27 +632,30 @@ Emmiter.create = function () {
  * @param ctx
  * @static
  */
-Emmiter.destroy = function (ctx) {
-  delete ctx.NS_SEPARATOR;
-  delete ctx._isListener;
-  delete ctx._parseEventName;
-  delete ctx._buildEventName;
-  delete ctx.getListeners;
-  delete ctx._parseListeners;
-  delete ctx.on;
-  delete ctx.bind;
-  delete ctx.addListener;
-  delete ctx.one;
-  delete ctx.once;
-  delete ctx.off;
-  delete ctx.unbind;
-  delete ctx.removeListener;
-  delete ctx.emit;
-  delete ctx.trigger;
-  delete ctx.returnListenersResults;
+Emmiter.destroy = function Emmiter$destroy (ctx) {
+  Object.keys(Emmiter.prototype).forEach(function (key) {
+    delete ctx[key];
+  });
+  //delete ctx.NS_SEPARATOR;
+  //delete ctx._isListener;
+  //delete ctx._parseEventName;
+  //delete ctx._buildEventName;
+  //delete ctx.getListeners;
+  //delete ctx._parseListeners;
+  //delete ctx.on;
+  //delete ctx.bind;
+  //delete ctx.addListener;
+  //delete ctx.one;
+  //delete ctx.once;
+  //delete ctx.off;
+  //delete ctx.unbind;
+  //delete ctx.removeListener;
+  //delete ctx.emit;
+  //delete ctx.trigger;
+  //delete ctx.returnListenersResults;
 };
 
 module.exports = Emmiter;
 
-},{"extend":1,"isarray":2,"isfunction":3,"isobject":4,"sliced":6}]},{},["emmiter"])("emmiter")
+},{"extend":1,"isarray":2,"isfunction":3,"isobject":4,"setasap":6,"sliced":7}]},{},["emmiter"])("emmiter")
 });
